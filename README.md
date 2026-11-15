@@ -2,7 +2,7 @@
 
 用 Claude Code 类 coding agent 完成存量 Spring Boot SaaS 系统的**需求澄清、代码影响分析、技术设计、设计评审**。
 
-本仓库交付的是可直接落地的 **subagent / workflow / skill / command** 资产，不是应用代码。设计依据见 [Agent技术方案设计-GPT-V2.md](Agent技术方案设计-GPT-V2.md)。
+本仓库交付的是可直接落地的 **subagent / workflow / skill / command** 资产，不是应用代码。使用方式见 [USAGE.md](USAGE.md)，设计依据见 [Agent技术方案设计-GPT-V2.md](Agent技术方案设计-GPT-V2.md)。
 
 ## 1. 它是什么
 
@@ -10,11 +10,11 @@
 | --- | --- | --- |
 | 入口约定 | `CLAUDE.md` | 何时启用、角色边界、硬性规则 |
 | 工作流 | `.claude/workflows/awf.md` | 状态机、派发协议、门禁、回流、失效重跑 |
-| 子代理 | `.claude/agents/*.md` | A1 需求、A2 影响、A3 设计、A4 评审 |
+| 子代理 | `.claude/agents/*.md` | A1 获取、A2 澄清、A3 影响、A4 设计、A5 评审 |
 | 技能 | `.claude/skills/*/SKILL.md` | 流程协议、SaaS 检查、文档模板、代码检索、评审标准 |
 | 命令 | `.claude/commands/etp-awf-*.md` | `/etp-awf-start`、`/etp-awf-run`、`/etp-awf-gate`、`/etp-awf-status`、`/etp-awf-rerun`、`/etp-awf-review` |
 
-A0（编排）由主线程承担：状态机、产物版本、门禁与一致性校验都在主线程执行，因为 Claude Code 的子代理不能再次派发子代理。A1–A4 各自在独立上下文中工作，只写本阶段产物。
+A0（编排）由主线程承担：状态机、产物版本、门禁与一致性校验都在主线程执行，因为 Claude Code 的子代理不能再次派发子代理。A1–A5 各自在独立上下文中工作，只写本阶段产物。
 
 ## 2. 快速开始
 
@@ -38,11 +38,12 @@ A0（编排）由主线程承担：状态机、产物版本、门禁与一致性
 产物在 `docs/awf/US-2026-001/`：
 
 ```text
-00-workflow/   workflow-manifest、analysis-baseline、artifact-manifest、workflow-report
-01-requirement/ requirement-package.yaml、requirement-clarification.md、decision-log.yaml
-02-impact/      impact-package.yaml、impact-analysis.md、evidence-manifest.yaml
-03-design/      technical-design-package.yaml、technical-design.md、adrs/、design-coverage.yaml、expected-file-changes.yaml
-04-review/      review-report.yaml、review-report.md、revision-instructions.yaml
+00-workflow/     workflow-manifest、analysis-baseline、artifact-manifest、workflow-report
+01-source/       source-package.yaml、backend-scope.md、raw.md、assets/
+02-requirement/  requirement-package.yaml、requirement-clarification.md、decision-log.yaml
+03-impact/       impact-package.yaml、impact-analysis.md、evidence-manifest.yaml
+04-design/       technical-design-package.yaml、technical-design.md、adrs/、design-coverage.yaml、expected-file-changes.yaml
+05-review/       review-report.yaml、review-report.md、revision-instructions.yaml
 ```
 
 ## 3. 流程
@@ -54,7 +55,7 @@ flowchart LR
     A4 -->|PASS| G3 --> D[交付]
 ```
 
-12 个状态：`CREATED`、`BASELINE_READY`、`A1_RUNNING`、`WAITING_G1`、`A2_RUNNING`、`WAITING_G2`、`A3_RUNNING`、`A4_RUNNING`、`DESIGN_REVISION`、`WAITING_G3`、`COMPLETED`、`BLOCKED`。
+14 个状态：`CREATED`、`BASELINE_CONFIRMED`、`A1_RUNNING`、`WAITING_G1`、`A2_RUNNING`、`WAITING_G2`、`A3_RUNNING`、`A4_RUNNING`、`A5_RUNNING`、`DESIGN_REVISION`、`WAITING_DEPENDENCY`、`WAITING_G3`、`COMPLETED`、`BLOCKED`。
 
 三个门禁均为人工：G1 需求确认、G2 高风险影响确认、G3 设计审批。命令只计算阻断项与展开待决策项，不会替用户通过。
 

@@ -6,5 +6,6 @@
 - 子代理：`.claude/agents/`（etp-requirement-collector / etp-requirement-analyst / etp-impact-analyst / etp-technical-designer / etp-design-reviewer）
 - 技能：`.claude/skills/`（etp-awf-workflow / etp-requirement-fetch / etp-project-checklist / etp-legacy-saas-analysis / etp-design-doc-writing / etp-code-graph-query / etp-design-review）
 - 命令：`.claude/commands/etp-awf-*.md`
+- 使用说明：`USAGE.md`
 
 开始：`/etp-awf-start <US-ID> [US 链接或文件路径]`（需先提供人工基线），然后 `/etp-awf-run`。
