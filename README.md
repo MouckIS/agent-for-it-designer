@@ -9,12 +9,12 @@
 | 组成 | 位置 | 作用 |
 | --- | --- | --- |
 | 入口约定 | `CLAUDE.md` | 何时启用、角色边界、硬性规则 |
-| 工作流 | `.claude/workflows/awf.md` | 状态机、派发协议、门禁、回流、失效重跑 |
-| 子代理 | `.claude/agents/*.md` | A1 获取、A2 澄清、A3 影响、A4 设计、A5 评审 |
+| 工作流 | `.claude/workflows/awf.js` | 可执行编排脚本（`{name: "awf"}`）；流程规则见 `.claude/skills/etp-awf-workflow/references/orchestration-rules.md` |
+| 子代理 | `.claude/agents/*.md` | A0 执行（Preflight/校验/登记）、A1 获取、A2 澄清、A3 影响、A4 设计、A5 评审 |
 | 技能 | `.claude/skills/*/SKILL.md` | 流程协议、SaaS 检查、文档模板、代码检索、评审标准 |
 | 命令 | `.claude/commands/etp-awf-*.md` | `/etp-awf-start`、`/etp-awf-run`、`/etp-awf-gate`、`/etp-awf-status`、`/etp-awf-rerun`、`/etp-awf-review` |
 
-A0（编排）由主线程承担：状态机、产物版本、门禁与一致性校验都在主线程执行，因为 Claude Code 的子代理不能再次派发子代理。A1–A5 各自在独立上下文中工作，只写本阶段产物。
+A0（编排）由 `.claude/workflows/awf.js` 脚本 + 主线程共同承担：脚本负责按状态编排各阶段的 `agent` 调用，状态机、产物版本、门禁与一致性校验仍在主线程执行，因为 Claude Code 的子代理不能再次派发子代理。脚本没有文件系统，读 manifest、算 sha256、跑校验、写登记这些文件层工作交给 `etp-awf-controller` 子代理（A0 执行层，只写 `00-workflow/`）。A1–A5 各自在独立上下文中工作，只写本阶段产物。
 
 ## 2. 快速开始
 
@@ -94,7 +94,7 @@ A4 FAIL 输出 `revision-instructions.yaml`，按 `return_to` 只重跑最早受
 
 ## 6. 设计取舍
 
-1. **A0 放主线程**：子代理不能再派发；把编排放主线程还能保证门禁只由主线程写状态，避免子代理越权推进。
+1. **A0 拆成脚本 + 主线程**：编排放在 `.claude/workflows/awf.js`，状态写入与门禁留在主线程，因为子代理不能再派发；这样门禁只由主线程写状态，避免子代理越权推进。
 2. **YAML 优先**：覆盖矩阵、追溯、门禁都要求机器可读；只写 Markdown 会让校验退化成人工阅读。
 3. **不内置校验脚本**：全部规则以 checklist + 字段约束表达，避免把工作流绑定到某个运行时；需要自动化时可在 CI 里对 YAML 做 JSON Schema 校验。
 4. **draft 与 final 双模式**：draft 允许跳过人工门禁但强制标记，禁止用于交接。
@@ -107,4 +107,4 @@ A4 FAIL 输出 `revision-instructions.yaml`，按 `return_to` 只重跑最早受
 
 ## 8. 兼容其他 coding agent
 
-结构与 Claude Code 一致。若使用 `.codebuddy/` 或其他目录约定，把 `.claude/agents`、`.claude/skills`、`.claude/commands` 同步复制过去即可；入口约定以 `AGENTS.md`/`CLAUDE.md` 为准。
+结构与 Claude Code 一致。若使用 `.codebuddy/` 或其他目录约定，把 `.claude/agents`、`.claude/skills`、`.claude/commands`、`.claude/workflows` 同步复制过去即可；入口约定以 `AGENTS.md`/`CLAUDE.md` 为准。

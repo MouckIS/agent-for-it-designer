@@ -24,7 +24,7 @@ description: AWF 多 Agent 技术方案设计工作流的状态机、产物协�
 | A4 设计 | 设计、ADR、迁移兼容、文件清单、检查项回应 | 扩大影响范围、改需求 |
 | A5 评审 | 审查、问题、修订指令、检查项复核 | 直接修改设计产物 |
 
-A0 由主线程 + workflow 定义 + 校验脚本 + 人工门禁实现，不派发为子代理；A1～A5 是子代理，不能再派发 Task。
+A0 由三部分组成：**决策层**是可执行脚本 `.claude/workflows/awf.js`（状态路由、派发顺序、停点返回），**执行层**是 `etp-awf-controller` 子代理（Preflight、产物六步校验与 C 检查、sha256 与 manifest 登记、读修订指令），**门禁**由人工通过 `/etp-awf-gate` 执行。A0 不做业务结论；A1～A5 是子代理，不能互相派发，workflow 内也不能再嵌套 workflow。
 
 ## 六个不可协商的点
 
@@ -39,6 +39,7 @@ A0 由主线程 + workflow 定义 + 校验脚本 + 人工门禁实现，不派�
 
 | 需要什么 | 读哪里 |
 | --- | --- |
+| 状态与派发、派发协议、门禁、回流、增量重跑、多 US 批次、异常处理、完成条件 | `references/orchestration-rules.md`（全文规则；可执行编排见 `.claude/workflows/awf.js`） |
 | 目录、字段、ID、版本、失效规则 | `references/artifact-protocol.md` |
 | 14 个状态与合法迁移、恢复方式 | `references/state-machine.md` |
 | G1/G2/G3 阻断项、C01–C16、DoD | `references/gates-and-checks.md` |

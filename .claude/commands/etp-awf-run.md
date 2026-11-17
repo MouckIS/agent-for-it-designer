@@ -1,7 +1,7 @@
 ---
 description: 按 AWF 状态机推进工作流，派发 A1-A5 子代理，直到遇到人工门禁或阻断。
 argument-hint: [US-ID]
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Workflow
 ---
 
 # /etp-awf-run
@@ -12,14 +12,16 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task
 
 ## 1. 读取
 
-1. `.claude/workflows/awf.md`
-2. `.claude/skills/etp-awf-workflow/SKILL.md` 与 `.claude/skills/etp-awf-workflow/references/state-machine.md`、`.claude/skills/etp-awf-workflow/references/artifact-protocol.md`、`.claude/skills/etp-awf-workflow/references/gates-and-checks.md`、`.claude/skills/etp-awf-workflow/references/context-assembly.md`
+1. `.claude/workflows/awf.js`（可执行 workflow 脚本，本命令通过 Workflow 工具执行它）
+2. `.claude/skills/etp-awf-workflow/SKILL.md` 与 `.claude/skills/etp-awf-workflow/references/state-machine.md`、`.claude/skills/etp-awf-workflow/references/artifact-protocol.md`、`.claude/skills/etp-awf-workflow/references/gates-and-checks.md`、`.claude/skills/etp-awf-workflow/references/context-assembly.md`、`.claude/skills/etp-awf-workflow/references/orchestration-rules.md`
 3. `docs/awf/<US-ID>/00-workflow/workflow-manifest.yaml`、`artifact-manifest.yaml`、`analysis-baseline.yaml`
 4. 批次模式（`portfolio_id` 非空）：`docs/awf/portfolio.yaml`
 
 ## 2. 循环推进
 
-最多执行 8 个阶段动作，状态由 manifest 决定：
+循环在 `.claude/workflows/awf.js` 脚本内执行，本命令只负责读 manifest 定位阶段、调用 Workflow 工具、回收结果并更新状态。A1–A5 由脚本派发的子代理执行，A0（状态推进、产物校验、门禁停点）由脚本 + 主线程承担。
+
+一次调用最多执行 8 个阶段动作，状态由 manifest 决定：
 
 | status | 动作 |
 | --- | --- |
@@ -33,26 +35,38 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task
 | `WAITING_G*` | 停下，输出门禁摘要 |
 | `COMPLETED` / `BLOCKED` | 停下，输出结果 |
 
-批次模式额外规则：
+派发对象与退出条件见 `orchestration-rules.md` §1 状态与派发；增量失效判定见 §4 增量重跑。批次模式规则见 §5 多 US 批次：
 
 - `depends_on` 的上游 US 未冻结时，不派发 A4；停在 `WAITING_DEPENDENCY`。
 - 无关 US 之间不读取对方产物。
 - A4 完成后由 A0 执行一次跨 US 冲突扫描，命中则回写 `portfolio.yaml` 并转人工。
 
-### 2.1 派发
+### 2.1 调用方式
 
-使用 Task，`subagent_type` 与阶段对应。prompt 严格按 `.claude/workflows/awf.md` 第 4 节模板，必须包含：
+调用 Workflow 工具执行脚本，参数只传事实，不传 prompt 正文：
 
-- 必读文件绝对路径
-- 输入产物路径与版本（从 manifest 读）
-- 基线四项与 `lag_policy`
-- 适用检查项清单（A3～A5）
-- 批次依赖与冲突（如有）
-- 本轮 revision（如有）
-- 输出目录
-- 硬约束与返回格式
+```text
+Workflow({
+  name: "awf",
+  args: {usId: "US-2026-001", usRef: "<链接或文件路径>", mode: "final", maxActions: 8}
+})
+```
 
-### 2.2 子代理返回后
+| 参数 | 说明 |
+| --- | --- |
+| `usId` | 必填，US 标识 |
+| `usRef` | 可选，US 平台链接或本地文件路径，透传给 A1 |
+| `mode` | 可选，`final`（默认）/ `draft` |
+| `maxActions` | 可选，本轮最多推进几个阶段动作，默认 8，上限 20 |
+| `dryRun` | 可选，`true` 只做 Preflight 返回，不派发子代理 |
+| `forceStage` | 可选，显式指定起始阶段；与 manifest 状态不一致时脚本拒绝 |
+
+- 派发哪个 `agentType` 由脚本按 manifest 状态决定，子代理 prompt 由脚本按 `orchestration-rules.md` §2 子代理派发协议装配。
+- 脚本不在 `name: "awf"` 的默认查找路径时，改用 `{scriptPath: ".claude/workflows/awf.js", args: {...}}`。
+- 返回 `status` 为 `stopped` / `done` / `max_actions` / `blocked` / `error`；遇到门禁时带 `gate`，遇到阻断时带 `reason` 与 `next`。
+- 本命令只消费返回摘要，仍要自己读文件复核。
+
+### 2.2 返回后
 
 1. 读取本阶段全部文件，核对字段、ID、版本、引用闭合（protocol 第 5 节）。
 2. 更新 `artifact-manifest.yaml`：bundle、version、files、sha256、dependencies、status。
@@ -94,7 +108,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task
 建议：/etp-awf-gate G1
 ```
 
-不要自行通过门禁，不要替用户选择决策项。
+不要自行通过门禁，不要替用户选择决策项。门禁细则见 `gates-and-checks.md` 与 `orchestration-rules.md` §3 门禁。
 
 ## 4. 记录
 

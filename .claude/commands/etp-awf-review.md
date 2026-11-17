@@ -1,7 +1,7 @@
 ---
 description: 强制重新执行 A5 独立设计评审。适用于人工修改设计后、或需要独立复核时。
 argument-hint: [US-ID]
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Workflow
 ---
 
 # /etp-awf-review
@@ -12,9 +12,18 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task
 - 若 `review-report.yaml` 已存在：把当前 `05-review/*` 复制到 `05-review/revision-history/round-<n>/` 留档，再生成新版本。
 - 更新 `workflow-manifest.yaml`：状态 → `A5_RUNNING`，`review_rounds` 保持不变（由 A5 返回后递增）。
 
-## 2. 派发 A5
+## 2. 执行 A5
 
-使用 Task，`subagent_type: etp-design-reviewer`，prompt 按 `.claude/workflows/awf.md` 第 4 节，额外要求：
+调用 Workflow 工具执行 `.claude/workflows/awf.js`，用 `forceStage` 把本轮限定到 A5（前置检查已把状态置为 `A5_RUNNING`，脚本会校验二者一致）：
+
+```text
+Workflow({
+  name: "awf",
+  args: {usId: "US-2026-001", forceStage: "A5", maxActions: 1}
+})
+```
+
+`agentType` 由脚本内部按阶段指定为 `etp-design-reviewer`，prompt 由脚本按 `orchestration-rules.md` §2 子代理派发协议装配，额外要求：
 
 - 必须做独立检索，记录检索次数与范围
 - 逐条复查上一轮未关闭问题

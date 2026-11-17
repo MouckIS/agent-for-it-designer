@@ -10,8 +10,8 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 
 ## 1. 读取协议
 
-1. `.claude/workflows/awf.md`
-2. `.claude/skills/etp-awf-workflow/SKILL.md` 与 `.claude/skills/etp-awf-workflow/references/artifact-protocol.md`、`.claude/skills/etp-awf-workflow/references/state-machine.md`
+1. `.claude/workflows/awf.js`（可执行编排脚本，本命令不执行它，只对齐其产物约定）
+2. `.claude/skills/etp-awf-workflow/SKILL.md` 与 `.claude/skills/etp-awf-workflow/references/artifact-protocol.md`、`.claude/skills/etp-awf-workflow/references/state-machine.md`、`.claude/skills/etp-awf-workflow/references/orchestration-rules.md`
 
 ## 2. 建目录
 

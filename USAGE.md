@@ -3,7 +3,8 @@
 面向存量 Spring Boot SaaS 仓库：把「US 获取 → 需求澄清 → 代码影响分析 → 技术设计 → 独立评审 → 交付」做成一条可追溯、可中断、可回流的流程。
 
 - 入口约定：`CLAUDE.md`（何时启用、角色边界、硬性规则）
-- 完整流程：`.claude/workflows/awf.md`（状态机、派发协议、门禁、回流）
+- 可执行脚本：`.claude/workflows/awf.js`（Workflow 工具编排 A1–A5）
+- 流程规则：`.claude/skills/etp-awf-workflow/references/orchestration-rules.md`（状态与派发、派发协议、门禁、回流、增量重跑、多 US 批次、异常处理、完成条件）
 - 本套资产统一以 `etp-` 为前缀，可直接放入仓库 `.claude/`，也可按目录结构上传到公司平台
 
 ## 1. 前置条件
@@ -23,19 +24,20 @@
 
 | 名称 | 阶段 | 职责 |
 | --- | --- | --- |
+| `etp-awf-controller` | A0（执行层） | Preflight 读 manifest 与基线判定下一步；产物六步校验与 C 检查；算 sha256 并更新 artifact/workflow manifest 与 workflow-report；读修订指令 |
 | `etp-requirement-collector` | A1 | 调 `etp-requirement-fetch` 取回 US 原始内容，固化快照，过滤后端范围，登记缺口 |
 | `etp-requirement-analyst` | A2 | 需求澄清：规则与来源、范围、角色、验收标准、待确认决策 |
 | `etp-impact-analyst` | A3 | 代码触点、功能影响、数据/契约/租户风险、证据、跨 US 冲突 |
 | `etp-technical-designer` | A4 | 详细设计、ADR、兼容迁移、发布回滚、检查项回应、文件清单 |
 | `etp-design-reviewer` | A5 | 独立复核（需求/影响/设计/检查项/一致性），输出 PASS / CONDITIONAL_PASS / FAIL 与修订指令 |
 
-A0 由主线程承担，不派发为子代理。子代理之间不能互相派发（客户端限制），阶段衔接全部由 `/etp-awf-run` 完成。
+A0 控制面不派发为子代理：编排由 `.claude/workflows/awf.js` 脚本 + 主线程的 `/etp-awf-*` 命令承担。A0 执行层（Preflight、产物校验、登记）由 `etp-awf-controller` 子代理承担，只写 `00-workflow/`。脚本通过 `agent(prompt, opts)` 调用各子代理，`opts.agentType` 指定 `.claude/agents/` 里的代理；子代理之间不能互相派发，也不能在阶段内嵌套 workflow，阶段衔接由 `/etp-awf-run` 完成。
 
 ### 2.2 技能（`.claude/skills/<name>/SKILL.md`）
 
 | 名称 | 何时读 | 内容 |
 | --- | --- | --- |
-| `etp-awf-workflow` | 每次 `/etp-awf-*`、每个子代理启动 | 状态机、产物协议、门禁与一致性检查、上下文装配 |
+| `etp-awf-workflow` | 每次 `/etp-awf-*`、每个子代理启动 | 状态机、产物协议、门禁与一致性检查、上下文装配、编排规则（`references/orchestration-rules.md`） |
 | `etp-requirement-fetch` | A1 获取 US 前 | 需求平台对接（当前占位） |
 | `etp-project-checklist` | A3/A4/A5 执行检查项前 | 项目特有检查项（当前占位） |
 | `etp-code-graph-query` | A3/A5 检索代码前 | 图谱 MCP 优先，无图谱降级 ripgrep/Glob |
@@ -50,7 +52,7 @@ A0 由主线程承担，不派发为子代理。子代理之间不能互相派�
 | 命令 | 参数 | 作用 | 是否改文件 |
 | --- | --- | --- | --- |
 | `/etp-awf-start` | `<US-ID> [链接或文件路径]` | 建产物目录，登记人工基线，写 workflow/baseline/artifact 三个 manifest | 是 |
-| `/etp-awf-run` | `[US-ID]` | 按当前状态派发 A1–A5，直到人工门禁、阻断或完成 | 是 |
+| `/etp-awf-run` | `[US-ID]` | 按当前状态派发 A1–A5，直到人工门禁、阻断或完成；内部调用 Workflow 工具执行 awf 脚本（`{name: "awf", args: {usId, usRef?, mode?, maxActions?, dryRun?, forceStage?}}`） | 是 |
 | `/etp-awf-gate` | `<G1/G2/G3> [US-ID]` | 计算并展示阻断项与待决策项，记录人的结论后推进状态 | 是 |
 | `/etp-awf-status` | `[US-ID]` | 查看阶段、版本、门禁、C01–C16、失效与下一步 | 否（只读） |
 | `/etp-awf-rerun` | `<A1/A2/A3/A4/A5> [US-ID]` | 检测产物/快照/基线变化，标记失效，重置门禁，定位最早受影响阶段 | 是 |
@@ -68,7 +70,7 @@ A0 由主线程承担，不派发为子代理。子代理之间不能互相派�
 .claude/agents/etp-*.md
 .claude/skills/etp-*/
 .claude/commands/etp-awf-*.md
-.claude/workflows/awf.md
+.claude/workflows/awf.js
 CLAUDE.md
 AGENTS.md
 ```
@@ -84,7 +86,7 @@ AGENTS.md
 | 子代理 | frontmatter `name` | 与文件名一致，如 `etp-impact-analyst` |
 | 技能 | frontmatter `name` + 目录名 | 两者一致，如 `etp-code-graph-query/SKILL.md` |
 | 命令 | 文件名（去 `.md`） | 如 `etp-awf-run.md` → `/etp-awf-run` |
-| 工作流 | 文件路径 | `.claude/workflows/awf.md` 保持原名，被命令与技能按路径引用 |
+| 工作流 | 文件名去 `.js` | 如 `awf.js` → workflow 名 `{name: "awf"}`；也可用 `{scriptPath: ".claude/workflows/awf.js"}` 直接指定路径 |
 
 全部使用小写字母 + 连字符。新增资产继续加 `etp-` 前缀，避免与其他项目组资产重名。
 
@@ -118,6 +120,8 @@ CREATED → BASELINE_CONFIRMED → A1 → A2 → WAITING_G1（人工）
       → WAITING_G3（人工） → COMPLETED
 A5 FAIL → DESIGN_REVISION → 定向回流 A1/A2/A3/A4 → A5 复审
 ```
+
+状态机全量迁移表与派发对象见 `.claude/skills/etp-awf-workflow/references/orchestration-rules.md` §1 状态与派发，可执行编排见 `.claude/workflows/awf.js`。
 
 | 状态 | 含义 |
 | --- | --- |
@@ -177,9 +181,9 @@ A5 FAIL → DESIGN_REVISION → 定向回流 A1/A2/A3/A4 → A5 复审
 | A5 结论 FAIL | 读 `revision-instructions.yaml` 的 `return_to`，只重跑最早受影响阶段，最多两轮；超限写 `DISPUTE.md` 并 `BLOCKED` |
 | A5 条件通过 | 逐条关闭 `conditions[]`（用户确认 → 写 closed_at 与 note → 生成 A5 新版本 → 重跑 C08）后才可走 G3 |
 | 人工直接改产物 | 改完执行 `/etp-awf-rerun` 让系统判断失效范围，不要手工改 manifest |
-| 多 US 批次 | 人工维护 `docs/awf/portfolio.yaml`（依赖/冲突），`WAITING_DEPENDENCY` 时不会越序派发 A4 |
+| 多 US 批次 | 人工维护 `docs/awf/portfolio.yaml`（依赖/冲突），`WAITING_DEPENDENCY` 时不会越序派发 A4；规则见 `orchestration-rules.md` §5 多 US 批次 |
 | 没有代码图谱 | 走 `etp-code-graph-query` 的 ripgrep 降级，证据类型记 `static_analysis` 并标注降解 |
-| 被 BLOCKED | 读 `00-workflow/workflow-report.md` 的阻断原因，人工处理后用 `/etp-awf-rerun` 或 `/etp-awf-run` 恢复 |
+| 被 BLOCKED | 读 `00-workflow/workflow-report.md` 的阻断原因，人工处理后用 `/etp-awf-rerun` 或 `/etp-awf-run` 恢复；异常分类见 `orchestration-rules.md` §6 异常处理 |
 
 ## 8. 按团队定制
 
