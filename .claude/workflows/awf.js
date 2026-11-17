@@ -90,6 +90,8 @@ const STAGES = {
       '把 US 完整、可追溯地取回来，并明确哪些内容属于后端实现范围。核心是三件事：取全、留痕、过滤。',
       '通过 etp-requirement-fetch 技能取回正文、附件、图片与外部参考，固化原始快照，按内容块拆分并判定 scope（backend/shared/frontend/out_of_scope/unknown）。',
       '不解释业务规则、不写验收标准、不评估技术可行性；这些是 A2 及以后的事。',
+      '图片由你用多模态直接 Read 识读（默认模型支持视觉，不依赖外部 OCR）：一次一张、长图分区重读，逐张产出识读卡（text 逐字照录 / description 客观结论 / backend_signals[] / confidence / parse_status），读完一张立即落盘。',
+      '图内后端信号（接口、字段、枚举、状态机、错误码）必须单独成块，不得因为整图是前端原型就整体归 frontend 而丢掉后端信息；识读不全或格式不支持时写 missing_parts 并登记 gaps[]（image_partial / image_unreadable / image_unsupported）。',
       '内容块不得静默丢弃：frontend 与 out_of_scope 必须在 excluded[] 给出理由；无法解析的附件登记 gaps[]，并说明是否影响后端范围判断。',
     ],
   },

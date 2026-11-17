@@ -178,7 +178,7 @@ portfolio:
 | --- | --- |
 | `source` | `platform`、`url`、`fetched_at`、`platform_updated_at`、`content_hash` 均非空 |
 | `snapshot.ref` | 指向 `01-source/raw.md`，文件存在 |
-| `snapshot.assets[]` | 每个附件/图片含 `id/path/type/parse_status`，图片含 `text` 或失败原因 |
+| `snapshot.assets[]` | 每个附件/图片含 `id/path/type/parse_status`；图片（`type=image`）为多模态识读卡，另需 `original_name/kind/text/description/backend_signals[]/related_blocks[]/confidence`，非 `parsed` 时 `missing_parts` 非空；非图片附件（`pdf`/`doc`/`sheet`/`zip`）只需 `id/path/original_name/type/parse_status` 与 `text` 或失败原因 |
 | `blocks[]` | 每块含 `id/title/location/scope/reason`；`scope ∈ backend/shared/frontend/out_of_scope/unknown` |
 | `excluded[]` | `frontend` 与 `out_of_scope` 块必须在此给出理由 |
 | `links[]` | `url/status/summary`；不可访问时 `status=failed` |
@@ -195,7 +195,21 @@ requirement_source:
   snapshot:
     ref: 01-source/raw.md
     assets:
-      - {id: ASSET-001, path: 01-source/assets/image-01.png, type: image, parse_status: parsed, text: 退款弹窗原型说明}
+      - id: ASSET-001
+        path: 01-source/assets/image-01-refund-dialog.png
+        original_name: 退款弹窗.png
+        type: image
+        kind: prototype
+        parse_status: parsed
+        confidence: high
+        text: |-
+          退款金额：￥1,280.00
+          退款方式：原路退回
+          [确认退款] [取消]
+        description: 退款确认弹窗原型，金额与方式只读展示，两个操作按钮；无状态分支标注。
+        backend_signals: [POST /api/refund/apply, 字段 refundAmount, 枚举 refundChannel=ORIGINAL]
+        related_blocks: [BLK-001]
+      - {id: ASSET-002, path: 01-source/assets/image-02-flow.png, type: image, kind: flowchart, parse_status: partial, confidence: medium, text: "提交 → 审核中 → …（右侧分支被裁剪）", description: 退款状态流转图，右侧「驳回」分支不可见。", backend_signals: [状态枚举 REFUNDING/SUCCESS/REJECTED], related_blocks: [BLK-003], missing_parts: 右侧驳回分支及后续状态}
   blocks:
     - {id: BLK-001, title: 退款金额校验, location: "2.3", scope: backend, reason: 描述接口校验逻辑}
     - {id: BLK-002, title: 退款页交互, location: "3.1", scope: frontend, reason: 页面组件与交互态}
@@ -204,7 +218,8 @@ requirement_source:
   links:
     - {url: "https://.../refund-spec", status: reachable, summary: 财务退款口径说明}
   gaps:
-    - {id: GAP-001, block_id: BLK-008, type: image_unreadable, impact: 可能影响金额展示口径, action: 人工补充截图}
+    - {id: GAP-001, block_id: BLK-008, type: image_partial, impact: 影响：驳回状态是否落库无法确认，影响后端范围判断, action: 人工补充完整截图或状态机文档}
+    - {id: GAP-002, block_id: BLK-009, type: image_unsupported, impact: 不影响（该文件为视觉稿） , action: 人工转 png 后重取}
   backend_scope: {block_ids: [BLK-001], total_blocks: 24, backend_blocks: 15}
 ```
 

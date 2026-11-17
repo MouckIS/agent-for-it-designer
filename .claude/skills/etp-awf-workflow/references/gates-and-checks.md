@@ -68,8 +68,8 @@
 | C10 | 关键人工修改后，对应门禁已重新确认（时间晚于修改） | 人工改动未复核 |
 | C11 | 每个 DESIGN 的 impact 引用有效且能回溯到规则；每个文件变更都挂 DESIGN 与 IMPACT | 无依据设计 |
 | C12 | 所有产物 `baseline_id` 一致；final 模式下基线有效（graph.commit 在声明的 lag_policy 内） | 基线失效 |
-| C13 | ART-10 中每个内容块都有 `scope`，`frontend`/`out_of_scope` 均在 `excluded[]` 中给出理由 | 内容被静默丢弃 |
-| C14 | ART-10 的 `source` 含 `source_url`、`fetched_at`、`content_hash`，且快照文件存在 | 来源不可追溯 |
+| C13 | ART-10 中每个内容块都有 `scope`，`frontend`/`out_of_scope` 均在 `excluded[]` 中给出理由；图片独有信息（接口/字段/枚举/错误码）已单独成块，不得仅因整图判为前端原型而整体归入 `frontend` | 内容被静默丢弃 |
+| C14 | ART-10 的 `source` 含 `source_url`、`fetched_at`、`content_hash`，且快照文件存在；每个 `snapshot.assets[]` 的 `path` 真实存在且非空，`type=image` 的 `parse_status` ∈ `parsed/partial/unreadable/unsupported` 并带 `text`、`description`、`confidence`，非 `parsed` 时 `missing_parts` 非空并已登记对应 `gap` | 来源不可追溯 |
 | C15 | 适用于当前阶段的检查项全部有结论；`not_applicable` 均有理由 | 检查项漏执行 |
 | C16 | 批次模式下，触点重叠的 US 均已在 ART-04 登记并以 `depends_on` 或 `conflicts_with` 处理 | 跨 US 冲突未登记 |
 
