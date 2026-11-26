@@ -1,0 +1,31 @@
+{
+  "name": "dsh-awf",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "description": "AWF: a 14-state, gate-controlled technical design workflow for legacy Spring Boot SaaS requirements, following DS-V5.",
+  "exports": {
+    ".": "./index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "lib",
+    "skills",
+    "locale/en.json",
+    "locale/zh.json",
+    "cordis.patch.yml",
+    "icon.svg",
+    "docs"
+  ],
+  "icon": "icon.svg",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

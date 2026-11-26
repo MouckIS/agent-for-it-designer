@@ -1,0 +1,6 @@
+# Mounts the AWF workflow plugin as a Host plugin of this profile.
+# It registers four model-facing tools, six /etp-awf-* commands, seven skills
+# and one system-prompt section; nothing else in the profile is touched.
+- insert:
+    - id: awf
+      name: dsh-awf

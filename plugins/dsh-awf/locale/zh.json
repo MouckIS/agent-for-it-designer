@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "技术方案设计工作流（AWF）",
+    "description": "把一个存量系统需求走完「取回 → 澄清 → 影响分析 → 技术设计 → 独立评审」：状态存在 docs/awf/<US-ID>/ 的 workflow-manifest.yaml 里，14 个状态只能按合法边迁移；产物是 YAML 事实源加渲染 Markdown，C01–C20 二十条一致性规则由插件复算；三道人工门禁 G1/G2/G3 必须由真人签字，阻断项没清零就拒绝通过，插件不会自动放行，也不会替你编一个基线。",
+    "detail": "docs/DETAIL.md"
+  }
+}

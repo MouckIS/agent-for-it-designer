@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Technical design workflow (AWF)",
+    "description": "Runs one legacy-system requirement through fetch, clarification, impact analysis, technical design and independent review. The state lives in docs/awf/<US-ID>/workflow-manifest.yaml and moves only along the fourteen legal transitions; artifacts are YAML sources plus rendered Markdown, and the plugin recomputes the twenty C01–C20 consistency rules. The three human gates G1/G2/G3 require a real signature: failing blocking items refuse approval, nothing is auto-approved and no baseline is ever invented.",
+    "detail": "docs/DETAIL.md"
+  }
+}
