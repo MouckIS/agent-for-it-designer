@@ -8,11 +8,13 @@
 
 | 层 | 载体 | 只做 | 绝不做 |
 | --- | --- | --- | --- |
-| 决策层 | `lib/workflow.js` 的路由脚本 | 状态路由、阶段派发、停点返回 | 读文件、判断产物内容 |
-| 执行层 | 每阶段派发的子代理 + 校验子代理 | 产出双产物、复核字段与引用 | 改状态、碰其它阶段目录 |
+| 决策层 | `lib/workflow.js` 的路由脚本（`lib/runner.js` 在 `node:vm` 里执行） | 状态路由、阶段派发、停点返回 | 读文件、判断产物内容 |
+| 执行层 | 每阶段派发的子代理 + 校验子代理（`ctx.subagents`，provider `spawn`） | 产出双产物、复核字段与引用 | 改状态、碰其它阶段目录 |
 | 门禁层 | `lib/tools.js` / `lib/commands.js` | 展示阻断项、写审批记录 | 替人签字、自动通过 |
 
 脚本没有文件系统（DS-V5 K1），所以「读 manifest、算哈希、判定规则」都由插件进程里的 `lib/store.js` 与 `lib/checks.js` 完成；子代理没有记忆（K4），所以每次派发的 prompt 都自带角色、基线、输入、使命、产出、检查项与返回契约。
+
+脚本只接受与 DSH 引擎相同的四个全局（`agent` / `phase` / `log` / `args`），所以同一份脚本既能在 `ctx.workflowEngine` 上跑，也能由 `lib/runner.js` 在进程内驱动。之所以选择进程内驱动，是因为本 profile 把 `@deepseek-ai/dsh-workflow-ptc` 放进 agent 预设的 `cordis:group` 并对 `workflowEngine` 做了 `isolate: true`——根作用域的插件拿不到它，硬注入会让插件永远 pending。
 
 ## 状态机
 
@@ -90,8 +92,9 @@ CREATED → BASELINE_CONFIRMED → A1_RUNNING → WAITING_G1 → A3_RUNNING → 
 
 ## 限制
 
-- **workflow 引擎不支持 `agentType`**（`dsh-workflow-ptc` 把它列为 deferred option），所以阶段角色写在 prompt 里，而不是靠子代理类型。这与 DS-V5 K4「子代理无持久记忆」的要求一致。
+- **没有 `agentType` 可用**（`dsh-workflow-ptc` 把它列为 deferred option，插件自己的 runner 也不支持），所以阶段角色写在 prompt 里，而不是靠子代理类型。这与 DS-V5 K4「子代理无持久记忆」的要求一致。
 - 脚本没有 `budget`，所以 DS-V5 K6 的预算停止改为 `maxActions`（默认 8，上限 20）。
+- 子代理按 `ctx.subagents` 的 `spawn` provider 拉起；如果某个 profile 没注册该 provider，`awf_run` 会得到 `null` 并在两次后按 K5 记 `BLOCKED`，而不是假装成功。
 - 阶段产物的语义正确性由子代理负责；插件只判定能被机械复算的部分（DS-V5 P9）。
 - 没有 Web 面板：这是 Host-only 插件，界面就是命令与工具的结果。
 
@@ -101,4 +104,4 @@ CREATED → BASELINE_CONFIRMED → A1_RUNNING → WAITING_G1 → A3_RUNNING → 
 node plugins/dsh-awf/test/plugin.test.mjs
 ```
 
-覆盖：YAML 子集 round-trip、状态数、规则表与门禁一致性、`apply` 的注册面（4 工具 / 6 命令 / 7 技能 / 1 提示段落）、启动拒绝伪造基线、重复启动、status 只读、门禁四种拒绝、重跑失效与门禁重置、C02/C03/C04/C14/C17/C18/C20 的正反例。当前 30/30 通过。
+覆盖：YAML 子集 round-trip、状态数、规则表与门禁一致性、`apply` 的注册面（4 工具 / 6 命令 / 7 技能 / 1 提示段落）、启动拒绝伪造基线、重复启动、status 只读、门禁五种拒绝、重跑失效与门禁重置、路由脚本的四条路径（到 G1、两次空返回 BLOCKED、校验失败 BLOCKED、maxActions 停止）、`subagentAgent` 的三种返回映射，以及 C02/C03/C04/C14/C17/C18/C20 的正反例。当前 38/38 通过。

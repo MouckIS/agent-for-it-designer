@@ -152,19 +152,9 @@ export function buildTools(deps) {
         if (exec.agent === undefined) {
           return { ok: false, status: 'error', state: 'UNKNOWN', summary: 'AWF 需要会话内的 Agent 才能拉起子代理', error: 'no agent' }
         }
-        const engine = deps.engine(exec.agent)
-        if (engine === undefined) {
-          return {
-            ok: false,
-            status: 'error',
-            state: 'UNKNOWN',
-            summary: '本会话未挂载 workflow 引擎，无法派发阶段子代理。请确认 profile 已启用 @deepseek-ai/dsh-workflow-ptc（`dsh --profile web --dump-config` 里应有 workflow-ptc 行），然后重新执行 /etp-awf-run。',
-            error: 'workflowEngine unavailable',
-          }
-        }
         try {
           const result = await runDispatch(
-            { store, engine, agent: exec.agent, usId: args.us_id },
+            deps.dispatch(store, exec.agent, args.us_id, exec.signal),
             {
               usRef: args.us_ref,
               mode: args.mode,

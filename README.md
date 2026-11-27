@@ -16,6 +16,27 @@
 
 A0（编排）由 `.claude/workflows/awf.js` 脚本 + 主线程共同承担：脚本负责按状态编排各阶段的 `agent` 调用，状态机、产物版本、门禁与一致性校验仍在主线程执行，因为 Claude Code 的子代理不能再次派发子代理。脚本没有文件系统，读 manifest、算 sha256、跑校验、写登记这些文件层工作交给 `etp-awf-controller` 子代理（A0 执行层，只写 `00-workflow/`）。A1–A5 各自在独立上下文中工作，只写本阶段产物。
 
+## 1.1 作为 DeepSeek Harness 插件运行
+
+同一套流程也做成了 DSH 插件：`plugins/dsh-awf/`。装上之后不再依赖 `.claude/` 目录约定——
+
+| 能力 | 形态 |
+| --- | --- |
+| 4 个模型工具 | `awf_start`、`awf_run`、`awf_status`、`awf_gate` |
+| 6 条人工命令 | `/etp-awf-start`、`/etp-awf-run`、`/etp-awf-status`、`/etp-awf-gate`、`/etp-awf-rerun`、`/etp-awf-review` |
+| 7 个技能 | `etp-awf-workflow`、`etp-requirement-fetch`、`etp-design-doc-writing`、`etp-legacy-saas-analysis`、`etp-code-graph-query`、`etp-project-checklist`、`etp-design-review` |
+| 规则引擎 | C01–C20 二十条一致性规则由插件复算（`lib/checks.js`） |
+| 状态机 | 14 状态、27 条合法边，状态只写在 `workflow-manifest.yaml` |
+
+与 `.claude/` 版本的关键差异，都是平台事实逼出来的：
+
+- **状态由插件写**，不是由子代理写：`ctx.tools` / `ctx.commands` 是唯一入口，门禁记录要求真实审批人姓名，阻断项未清零时拒绝 `APPROVED`。
+- **没有 `agentType`**：DSH 的 workflow 引擎把它列为 deferred option，阶段角色改为写在 prompt 里（这本来也符合「子代理无持久记忆」）。
+- **决策层脚本进程内执行**：本 profile 把 `workflow-ptc` 放在 agent 预设的隔离组里，根作用域拿不到 `workflowEngine`，所以 `lib/runner.js` 用 `node:vm` 跑同一份脚本，`agent()` 绑定到 `ctx.subagents`。
+- **自包含**：YAML 读写（`lib/yaml.js`）、技能副本（`skills/`）、文档（`docs/DETAIL.md`）都随包发布，不 import 工作区依赖。
+
+安装：在 **Plugins** 里添加本地目录 `plugins/dsh-awf`，或让 agent 调 `plugin_manager` 的 `install_bundle`。自测：`node plugins/dsh-awf/test/plugin.test.mjs`（38 项）。
+
 ## 2. 快速开始
 
 把 `.claude/`、`CLAUDE.md` 放到你的存量系统仓库根目录，然后：

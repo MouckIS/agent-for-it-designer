@@ -18,6 +18,8 @@ import * as plugin from '../index.js'
 import { nodeStore } from '../lib/store.js'
 import { startWorkflow, evaluate, renderStatus, recordGate, rerunWorkflow, gatePreview } from '../lib/a0.js'
 import { runChecks } from '../lib/checks.js'
+import { runScript, subagentAgent } from '../lib/runner.js'
+import { WORKFLOW_SCRIPT, STAGE_SCHEMA, VERIFY_SCHEMA } from '../lib/workflow.js'
 import { dump, parse } from '../lib/yaml.js'
 import { STATES, STAGE_ORDER, CHECK_IDS, GATES, RERUN_CLASSES } from '../lib/constants.js'
 
@@ -341,15 +343,160 @@ await testAsync('gate preview lists blocking rule ids', async () => {
   assert.match(preview.text, /APPROVED \/ PARTIALLY_APPROVED/)
 })
 
-await testAsync('awf_run reports a missing workflow engine instead of crashing', async () => {
+await testAsync('awf_run reports a dispatch failure instead of crashing', async () => {
   const tools = Object.fromEntries(ctx.record.tools.map(tool => [tool.name, tool]))
+  // The fake context has no fs service, so the store cannot read: the tool must
+  // still answer with a structured error rather than throwing.
   const answer = await tools.awf_run.execute(
     { us_id: 'US-2026-901' },
     { agent: { id: 'a', session: {}, ctx: { get: () => undefined } }, signal: AbortSignal.timeout(1000), arguments: {} },
   )
   assert.equal(answer.ok, false)
   assert.equal(answer.status, 'error')
-  assert.match(answer.summary, /未挂载 workflow 引擎/)
+  assert.match(answer.summary, /AWF 推进失败/)
+})
+
+// ── 3b. 决策层脚本：真正的路由行为 ──────────────────────────────────────────
+
+const scriptArgs = () => ({
+  usId: 'US-2026-901',
+  mode: 'final',
+  workdir: 'docs/awf/US-2026-901',
+  state: 'BASELINE_CONFIRMED',
+  maxActions: 8,
+  stopStates: {
+    CREATED: { reason: '未登记基线' },
+    WAITING_G1: { reason: '等待 G1', gate: 'G1' },
+    WAITING_G2: { reason: '等待 G2', gate: 'G2' },
+    BLOCKED: { reason: '阻断' },
+    COMPLETED: { reason: '完成' },
+  },
+  stageOfState: { BASELINE_CONFIRMED: 'A1', A1_RUNNING: 'A1', A2_RUNNING: 'A2' },
+  prompts: { A1: 'STAGE-A1', A2: 'STAGE-A2' },
+  verifyPrompts: { A1: 'VERIFY-A1', A2: 'VERIFY-A2' },
+  revisionPrompt: 'REVISION',
+  revisionState: 'DESIGN_REVISION',
+  schemas: { stage: STAGE_SCHEMA, verify: VERIFY_SCHEMA, revision: { type: 'object' } },
+})
+
+await testAsync('the routing script stops at G1 and reports the gate', async () => {
+  const calls = []
+  const run = await runScript({
+    script: WORKFLOW_SCRIPT,
+    args: scriptArgs(),
+    agent: async (prompt, opts) => {
+      calls.push({ prompt, label: opts.label })
+      if (prompt.startsWith('VERIFY')) return { passed: true, nextState: 'WAITING_G1', checks: [{ id: 'C13', result: 'pass' }], failures: [] }
+      return { stage: 'A1', bundleId: 'A1-001', version: 1, status: 'draft', files: [], blocked: [], needHuman: [], next: 'ok' }
+    },
+  })
+  assert.equal(run.error, null)
+  assert.equal(run.value.status, 'stopped')
+  assert.equal(run.value.gate, 'G1')
+  assert.equal(run.value.state, 'WAITING_G1')
+  assert.equal(run.value.next, '/etp-awf-gate G1')
+  assert.equal(run.agentsStarted, 2, '一次阶段派发 + 一次校验')
+  assert.deepEqual(calls.map(call => call.label), ['A1', 'verify A1'])
+})
+
+await testAsync('the routing script blocks after two empty stage returns (K5)', async () => {
+  const run = await runScript({
+    script: WORKFLOW_SCRIPT,
+    args: scriptArgs(),
+    agent: async () => null,
+  })
+  assert.equal(run.error, null)
+  assert.equal(run.value.status, 'stopped')
+  assert.equal(run.value.state, 'BLOCKED')
+  assert.match(run.value.reason, /连续两次空返回/)
+  assert.equal(run.agentsStarted, 2)
+})
+
+await testAsync('a failing verification blocks instead of advancing', async () => {
+  const run = await runScript({
+    script: WORKFLOW_SCRIPT,
+    args: scriptArgs(),
+    agent: async (prompt) => {
+      if (prompt.startsWith('VERIFY')) return { passed: false, nextState: 'A1_RUNNING', checks: [{ id: 'C14', result: 'fail' }], failures: ['快照不存在'] }
+      return { stage: 'A1', bundleId: 'A1-001', version: 1, status: 'draft', files: [], blocked: [], needHuman: [], next: 'ok' }
+    },
+  })
+  assert.equal(run.value.state, 'BLOCKED')
+  assert.match(run.value.reason, /两次校验未通过/)
+  assert.match(run.value.reason, /快照不存在/)
+})
+
+await testAsync('maxActions stops the loop instead of running to a gate', async () => {
+  const args = scriptArgs()
+  args.maxActions = 1
+  args.stageOfState = { BASELINE_CONFIRMED: 'A1', A1_RUNNING: 'A2' }
+  const run = await runScript({
+    script: WORKFLOW_SCRIPT,
+    args,
+    agent: async (prompt) => {
+      if (prompt.startsWith('VERIFY')) return { passed: true, nextState: 'A1_RUNNING', checks: [], failures: [] }
+      return { stage: 'A1', bundleId: 'A1-001', version: 1, status: 'draft', files: [], blocked: [], needHuman: [], next: 'ok' }
+    },
+  })
+  assert.equal(run.value.status, 'max_actions')
+  assert.match(run.value.reason, /阶段动作上限 1/)
+})
+
+await testAsync('subagentAgent carries a schema to ctx.subagents and returns structured data', async () => {
+  const specs = []
+  const fakeCtx = {
+    subagents: {
+      async startActivation(spec) {
+        specs.push(spec)
+        return {
+          childId: 'c1',
+          name: 'agent-1',
+          result: Promise.resolve({ stopReason: 'completed', structured: { passed: true, nextState: 'X', checks: [], failures: [] }, output: [] }),
+          async dispose() {},
+        }
+      },
+    },
+  }
+  const call = subagentAgent(fakeCtx, { id: 'root', session: {} })
+  const answer = await call('do a thing', { label: 'verify A1', schema: { type: 'object' } })
+  assert.equal(answer.passed, true)
+  assert.equal(specs.length, 1)
+  assert.equal(specs[0].provider, 'spawn')
+  assert.equal(specs[0].label, 'verify A1')
+  assert.equal(specs[0].outputSchema.type, 'object')
+  assert.equal(specs[0].prompt[0].type, 'text')
+})
+
+await testAsync('subagentAgent maps a non-completed child to null, not an exception', async () => {
+  const fakeCtx = {
+    subagents: {
+      async startActivation() {
+        return {
+          childId: 'c1', name: 'agent-1',
+          result: Promise.resolve({ stopReason: 'error', output: [] }),
+          async dispose() {},
+        }
+      },
+    },
+  }
+  const call = subagentAgent(fakeCtx, { id: 'root', session: {} })
+  assert.equal(await call('x', {}), null)
+})
+
+await testAsync('a malformed child schema answer maps to null so the script can retry', async () => {
+  const fakeCtx = {
+    subagents: {
+      async startActivation() {
+        return {
+          childId: 'c1', name: 'agent-1',
+          result: Promise.resolve({ stopReason: 'completed', output: [] }),
+          async dispose() {},
+        }
+      },
+    },
+  }
+  const call = subagentAgent(fakeCtx, { id: 'root', session: {} })
+  assert.equal(await call('x', { schema: { type: 'object' } }), null)
 })
 
 // ── 4. C 规则：正例与反例 ────────────────────────────────────────────────────

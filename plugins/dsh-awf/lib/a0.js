@@ -40,12 +40,12 @@ import {
 } from './prompts.js'
 import {
   WORKFLOW_SCRIPT,
-  WORKFLOW_META,
   STAGE_SCHEMA,
   VERIFY_SCHEMA,
   REVISION_SCHEMA,
   clampMaxActions,
 } from './workflow.js'
+import { runScript, subagentAgent } from './runner.js'
 import { runChecks, gateChecks, gatePassed } from './checks.js'
 
 /** The state a stage's verification currently expects next. */
@@ -300,7 +300,7 @@ export function routingTables() {
  * stop. Returns a plain summary the tool renders.
  */
 export async function runDispatch(deps, request) {
-  const { store, engine, agent, usId } = deps
+  const { store, ctx, agent, usId } = deps
   const manifestRecord = await store.readManifest(usId)
   if (manifestRecord === undefined) {
     return {
@@ -372,27 +372,19 @@ export async function runDispatch(deps, request) {
     revisionState: 'DESIGN_REVISION',
     schemas: { stage: STAGE_SCHEMA, verify: VERIFY_SCHEMA, revision: REVISION_SCHEMA },
   }
-  const run = engine.start({
+  const run = await runScript({
     script: WORKFLOW_SCRIPT,
-    meta: WORKFLOW_META,
     args,
-    parent: agent,
+    agent: subagentAgent(deps.ctx, agent, { cwd: deps.cwd, signal: deps.signal }),
+    onPhase: title => deps.onProgress?.(`phase: ${title}`),
+    onLog: message => deps.onProgress?.(message),
   })
-  let result
-  try {
-    result = await run.result
-  } finally {
-    try {
-      await run.dispose()
-    } catch {
-      // Disposal failure must not hide the run's settled result.
-    }
-  }
-  if (result.stopReason !== 'completed') {
+  let result = run
+  if (result.error !== null) {
     return {
       status: 'error',
       state: manifest.status,
-      reason: result.error || `workflow 以 ${result.stopReason} 结束`,
+      reason: result.error,
       agentsStarted: result.agentsStarted,
     }
   }

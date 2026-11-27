@@ -100,13 +100,9 @@ export function buildCommands(deps) {
         const usId = words[0] ?? (await resolveSingleUs(store))
         if (usId === undefined) return fail('未指定 US，且 docs/awf/ 下有多个 US）：请写 /etp-awf-run <US-ID>')
         if (invocation.agent === undefined) return fail('本命令需要在会话内执行')
-        const engine = deps.engine(invocation.agent)
-        if (engine === undefined) {
-          return fail('本会话未挂载 workflow 引擎，无法派发阶段子代理。请确认 profile 已启用 @deepseek-ai/dsh-workflow-ptc 后重新执行 /etp-awf-run。')
-        }
         try {
           const result = await runDispatch(
-            { store, engine, agent: invocation.agent, usId },
+            deps.dispatch(store, invocation.agent, usId, invocation.signal),
             {
               maxActions: flags['max-actions'] === undefined ? undefined : Number(flags['max-actions']),
               dryRun: flags['dry-run'] === true,

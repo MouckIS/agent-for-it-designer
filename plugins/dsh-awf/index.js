@@ -32,13 +32,18 @@ export const name = 'awf'
 /**
  * 根作用域依赖的 Host 服务。
  *
- * 故意不把 `workflowEngine` 写进 `inject`：它由 `@deepseek-ai/dsh-workflow-ptc`
- * 挂在 **agent 预设作用域**里，而不是 profile 根；硬注入会让插件永远停在
- * pending（waiting for service: workflowEngine）。改为调用时惰性解析：没有引擎时
- * 工具与命令仍可用（start/status/gate/rerun 都不需要引擎），只有 `awf_run`
- * 会明确报「本会话未挂载 workflow 引擎」。
+ * `fs` 必须在 `inject` 里：Cordis 的 `ctx.fs` 只能通过 inject 声明后读取，
+ * 否则访问会抛 "cannot get property fs without inject"。
+ *
+ * `subagents` 必须在 inject 里：决策层脚本的 `agent()` 通过
+ * `ctx.subagents.startActivation` 派发子代理。
+ *
+ * 故意不注入 `workflowEngine`：本 profile 把 `@deepseek-ai/dsh-workflow-ptc`
+ * 放在 agent 预设的 `cordis:group` 里并对 `workflowEngine` 做了 `isolate: true`，
+ * 根作用域根本拿不到；硬注入会让插件永远停在 pending。插件改为在进程内用
+ * `node:vm` 跑同一份决策层脚本（`lib/runner.js`），DS-V5 §2.3 的三层划分不变。
  */
-export const inject = ['tools', 'commands', 'skills']
+export const inject = ['tools', 'commands', 'skills', 'fs', 'subagents']
 
 /** 包根目录，用于给出技能与文档的绝对路径。 */
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -109,18 +114,21 @@ export function apply(ctx) {
   const deps = {
     getStore: agent => storeFor(ctx, agent),
     /**
-     * 惰性取引擎：优先根作用域，其次由调用方传入的 agent 上下文。
-     * 取不到时返回 `undefined`，由 `awf_run` 给出可执行的错误说明。
+     * 组装一次派发所需的依赖。
+     *
+     * 不用 `ctx.workflowEngine`：本 profile 把 workflow-ptc 放在 agent 预设的
+     * `cordis:group` 里并 isolate 了 `workflowEngine`，根作用域拿不到。改为在插件
+     * 进程内用 vm 跑同一份决策层脚本，`agent()` 落到根作用域的 `ctx.subagents`。
      */
-    engine: agent => {
-      const direct = ctx.get('workflowEngine')
-      if (direct !== undefined) return direct
-      if (agent !== undefined && agent.ctx !== undefined) {
-        const scoped = agent.ctx.get?.('workflowEngine')
-        if (scoped !== undefined) return scoped
-      }
-      return undefined
-    },
+    dispatch: (store, agent, usId, signal) => ({
+      store,
+      ctx,
+      agent,
+      usId,
+      signal,
+      cwd: store.root,
+      onProgress: () => {},
+    }),
   }
 
   // 技能：把 AWF 的协议、模板与检查清单放进 `ctx.skills`，供阶段子代理加载。
